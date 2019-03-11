@@ -1,0 +1,52 @@
+encode = pd.get_dummies(df[['seller', 'grp', 'prdct', 'Month']], columns = ['prdct'])
+encode.set_index(['grp', 'Month'], inplace = True)
+ans = encode.groupby(level = ['grp', 'Month']).sum().astype(int)
+ans.reset_index(inplace = True)
+
+con = df[['seller', 'grp']].drop_duplicates()
+units_per_group = con.merge(ans, on = 'grp', how = 'left')
+
+agnt_mth = units_per_group[['grp', 'Month']].drop_duplicates()
+
+for mrch in units_per_group.columns[3:]:
+    groups_no_bycat = pd.DataFrame(units_per_group.groupby(['grp', 'Month', mrch])['grp'].agg('count')).reset_index()
+    groupsperagnt = pd.DataFrame(groups_no_bycat.groupby(['seller', 'Month'])['grp'].sum()).reset_index()
+    groupsperagnt.rename(columns = {'grp': mrch}, inplace = True)
+    agnt_mth = agnt_mth.merge(groupsperagnt, on = ['seller', 'Month'], how = 'left')
+    
+units_per_agnt = pd.DataFrame(units_per_group.groupby(['seller', 'Month'])[units_per_group.columns[3:]].sum()).reset_index()
+
+avg_units = units_per_agnt.merge(agnt_mth, on = ['seller', 'Month'], how = 'left')
+
+# For duplicated tour leaders
+flag_result = pd.DataFrame({'seller': ['test'], 
+                             'Flag_a': [0], 
+                             'Flag_b': [1], 
+                             'Flag_c': [2], 
+                             'Flag_d': [3], 
+                             'Flag_e': [4], 
+                             'Flag_f': [5]})
+
+a = avg_units[avg_units.duplicated(subset = 'seller', keep = False) == True].reset_index().drop(columns = 'index')
+
+for agnt in a['seller'].unique().tolist():
+    work_df = a.set_index('seller').loc[agnt]
+    
+    work_df = work_df.notnull().astype(int)
+    work_df.reset_index(inplace = True)
+    
+    flag = pd.DataFrame(work_df.groupby('seller')[work_df.columns[2:]].sum())
+    
+    for col in flag.columns:
+        flag[col] = (flag[col] <= 1).astype(int)
+    
+    for col in flag.columns:
+        flag = flag.rename(columns = {col : col.replace('Avg_Units', 'Flag')})
+        
+    flag.reset_index(inplace = True)
+    
+    flag_result = flag_result.append(flag)
+
+flag_result.reset_index(inplace = True)
+flag_result.drop(columns = 'index', inplace = True)
+flag_result = flag_result[flag_result['seller'] != 'test']
